@@ -1,29 +1,72 @@
-signingConfigs {
-    release {
-        def ksPath = System.getenv("KEYSTORE_PATH")
+plugins {
+    alias(libs.plugins.android.application)
+}
 
-        if (ksPath != null) {
-            storeFile file(ksPath)
-            storePassword System.getenv("KEYSTORE_PASSWORD")
-            keyAlias System.getenv("KEY_ALIAS")
-            keyPassword System.getenv("KEY_PASSWORD")
+android {
+    namespace 'com.bnxit.bnxittv'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "com.bnxit.bnxittv"
+        minSdk 24
+        targetSdk 36
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        vectorDrawables.useSupportLibrary = true
+    }
+
+    signingConfigs {
+        release {
+            def ksPath = System.getenv("KEYSTORE_PATH")
+            if (ksPath != null) {
+                storeFile file(ksPath)
+                storePassword System.getenv("KEYSTORE_PASSWORD")
+                keyAlias System.getenv("KEY_ALIAS")
+                keyPassword System.getenv("KEY_PASSWORD")
+            }
         }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+
+            def ksPath = System.getenv("KEYSTORE_PATH")
+            if (ksPath != null) {
+                signingConfig signingConfigs.release
+            }
+        }
+
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
     }
 }
 
-buildTypes {
-    release {
-        minifyEnabled true
-        shrinkResources true
-        proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+dependencies {
+    implementation libs.appcompat
+    implementation libs.material
+    implementation libs.recyclerview
+    implementation libs.leanback
+    implementation libs.constraintlayout
 
-        def ksPath = System.getenv("KEYSTORE_PATH")
-        if (ksPath != null) {
-            signingConfig signingConfigs.release
-        }
-    }
+    // Media3 ExoPlayer
+    implementation libs.media3.exoplayer
+    implementation libs.media3.exoplayer.hls
+    implementation libs.media3.exoplayer.dash
+    implementation libs.media3.ui
 
-    debug {
-        minifyEnabled false
-    }
+    testImplementation libs.junit
+    androidTestImplementation libs.ext.junit
+    androidTestImplementation libs.espresso.core
 }
