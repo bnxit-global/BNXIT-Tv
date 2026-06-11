@@ -2,8 +2,10 @@ name: Build Android APK
 
 on:
   push:
-    branches: [main]
-    tags: ['v*']
+    branches:
+      - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -11,6 +13,7 @@ permissions:
 
 jobs:
   build:
+    name: Build & Package APK
     runs-on: ubuntu-latest
 
     steps:
@@ -20,31 +23,85 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: 17
-          cache: gradle
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
 
-      - name: Grant Execute Permission
+      - name: Grant Execute Permission to Gradlew
         run: chmod +x gradlew
 
-      - name: Build APK (Debug only for safety)
-        run: ./gradlew assembleDebug
+      - name: Decode Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/keystore.jks
 
-      - name: Prepare Release Folder
+      - name: Build Debug & Release APKs
+        env:
+          KEYSTORE_FILE_PATH: "keystore.jks"
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleDebug assembleRelease
+
+      - name: Locate and Standardize Build Outputs
         run: |
           mkdir -p release-assets
-          cp app/build/outputs/apk/debug/app-debug.apk release-assets/BNXIT-Tv-debug.apk
+          
+          # Copy ready-to-run debug APK
+          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            cp app/build/outputs/apk/debug/app-debug.apk release-assets/BNXIT-Tv-debug.apk
+            echo "Copied debug APK successfully."
+          fi
+          
+          # Locate and copy release APK (signed or unsigned fallback)
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk release-assets/BNXIT-Tv-release.apk
+            echo "Copied signed release APK."
+          elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp app/build/outputs/apk/release/app-release-unsigned.apk release-assets/BNXIT-Tv-release.apk
+            echo "Copied unsigned release APK fallback."
+          else
+            echo "No standard release outputs found. Searching directory..."
+            find app/build/outputs/apk/ -name "*.apk" -exec cp {} release-assets/ \;
+          fi
+          
+          echo "Release Assets Directory:"
+          ls -la release-assets
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BNXIT-debug
+          name: BNXIT-Tv-debug-apk
           path: release-assets/BNXIT-Tv-debug.apk
+
+      - name: Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BNXIT-Tv-release-apk
+          path: release-assets/BNXIT-Tv-release.apk
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/BNXIT-Tv-debug.apk
+          files: release-assets/*.apk
+          name: Release ${{ github.ref_name }}
+          body: |
+            ## BNXIT TV IPTV Player - Release ${{ github.ref_name }}
+            
+            Choose the appropriate APK file to download:
+            
+            - **`BNXIT-Tv-release.apk`**: **[RECOMMENDED]** Production optimized release build. If signing credentials were provided, this is a fully signed production APK.
+            - **`BNXIT-Tv-debug.apk`**: Pre-signed debugging build, ready to install and watch immediately on your Smart TV or Projector.
+            
+            ### TV/Projector Installation Guide:
+            1. Download your preferred APK from the assets list below.
+            2. Copy the file to a USB Flash Drive.
+            3. Plug the USB drive into your Android TV or Projector.
+            4. Open a File Manager on your TV, find the APK, and install it.
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
