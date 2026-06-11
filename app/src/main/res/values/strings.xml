@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">BNXIT Tv</string>
+    <string name="loading">Loading…</string>
+    <string name="error_stream">Stream unavailable</string>
+    <string name="retry">Press OK to retry</string>
+    <string name="no_channels">No channels found</string>
+    <string name="all_categories">All</string>
+    <string name="now_playing">Now Playing</string>
+    <string name="press_ok_to_play">Press OK to play</string>
+    <string name="connecting">Connecting…</string>
+    <string name="buffering">Buffering…</string>
+</resources>

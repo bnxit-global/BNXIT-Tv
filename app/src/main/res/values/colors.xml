@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App Colors - Dark TV Theme -->
+    <color name="bg_primary">#FF070709</color>
+    <color name="bg_secondary">#FF0E0E14</color>
+    <color name="bg_category_panel">#E60A0A0E</color>
+    <color name="bg_channel_panel">#E60F0F16</color>
+    <color name="bg_player_area">#FF000000</color>
+
+    <!-- Translucent Overlay / Glass Panels -->
+    <color name="panel_bg">#DC0A0A0F</color>
+    <color name="panel_border">#20FFFFFF</color>
+
+    <!-- Text Colors -->
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#FFC4C4D0</color>
+    <color name="text_dim">#FF7E7E90</color>
+
+    <!-- Focus / Accent -->
+    <color name="focus_blue">#FF00E5FF</color>
+    <color name="focus_glow">#2000E5FF</color>
+    <color name="focus_border">#FF00E5FF</color>
+    <color name="focus_cyan_glow">#4000E5FF</color>
+
+    <!-- State Colors -->
+    <color name="item_selected">#2AFFFFFF</color>
+    <color name="item_default">#00000000</color>
+    <color name="item_pressed">#40FFFFFF</color>
+
+    <!-- Category Colors for Channel Initials -->
+    <color name="cat_sports">#FF2ECC71</color>
+    <color name="cat_news">#FFE74C3C</color>
+    <color name="cat_bangla">#FF3498DB</color>
+    <color name="cat_movies">#FFE67E22</color>
+    <color name="cat_entertainment">#FF9B59B6</color>
+    <color name="cat_default">#FF95A5A6</color>
+
+    <!-- Player Overlay -->
+    <color name="overlay_bg">#80000000</color>
+    <color name="hud_bg">#CC050508</color>
+    <color name="glass_card_bg">#E615151E</color>
+    <color name="error_red">#FFFF4A4A</color>
+    <color name="loading_blue">#FF00E5FF</color>
+    <color name="live_badge_red">#FFE50914</color>
+
+    <!-- Divider -->
+    <color name="divider">#1AFFFFFF</color>
+
+    <!-- Legacy colors kept for compatibility -->
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>
