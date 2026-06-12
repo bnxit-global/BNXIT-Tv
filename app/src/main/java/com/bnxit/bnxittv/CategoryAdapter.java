@@ -13,7 +13,7 @@ import java.util.List;
 
 /**
  * RecyclerView adapter for the category sidebar.
- * TV-optimized: focus-based highlighting, no animations.
+ * TV-optimized: focus-based highlighting, stable IDs, payload updates.
  */
 public class CategoryAdapter extends RecyclerView.Adapter<CategoryAdapter.CategoryViewHolder> {
 
@@ -26,23 +26,47 @@ public class CategoryAdapter extends RecyclerView.Adapter<CategoryAdapter.Catego
         void onCategorySelected(String category, int position);
     }
 
+    public CategoryAdapter() {
+        setHasStableIds(true);
+    }
+
+    @Override
+    public long getItemId(int position) {
+        return categories.get(position).hashCode();
+    }
+
     public void setOnCategoryClickListener(OnCategoryClickListener listener) {
         this.listener = listener;
     }
 
     public void setCategories(List<String> categories) {
+        String selectedCategoryName = null;
+        if (selectedPosition >= 0 && selectedPosition < this.categories.size()) {
+            selectedCategoryName = this.categories.get(selectedPosition);
+        }
+
         this.categories = categories != null ? categories : new ArrayList<>();
-        this.selectedPosition = 0;
+
+        if (selectedCategoryName != null) {
+            int newPos = findPosition(selectedCategoryName);
+            this.selectedPosition = (newPos >= 0) ? newPos : 0;
+        } else {
+            this.selectedPosition = 0;
+        }
         notifyDataSetChanged();
     }
 
     public void setSelectedPosition(int position) {
+        setSelectedPosition(position, true);
+    }
+
+    public void setSelectedPosition(int position, boolean notifyNew) {
         int oldPos = this.selectedPosition;
         this.selectedPosition = position;
-        if (oldPos >= 0 && oldPos < categories.size()) {
+        if (oldPos >= 0 && oldPos < categories.size() && oldPos != position) {
             notifyItemChanged(oldPos, "selection_changed");
         }
-        if (position >= 0 && position < categories.size()) {
+        if (notifyNew && position >= 0 && position < categories.size()) {
             notifyItemChanged(position, "selection_changed");
         }
     }
@@ -64,11 +88,8 @@ public class CategoryAdapter extends RecyclerView.Adapter<CategoryAdapter.Catego
         if (payloads.isEmpty()) {
             onBindViewHolder(holder, position);
         } else {
-            if (holder.tvName.hasFocus() || position == selectedPosition) {
-                holder.tvName.setTextColor(0xFFFFFFFF); // White when focused or selected
-            } else {
-                holder.tvName.setTextColor(0xFFC4C4D0); // Dim when normal
-            }
+            // Payload update: only update selected state, don't touch anything else
+            holder.tvName.setSelected(position == selectedPosition);
         }
     }
 
@@ -80,25 +101,31 @@ public class CategoryAdapter extends RecyclerView.Adapter<CategoryAdapter.Catego
         String displayText = getCategoryEmoji(category) + " " + category;
         holder.tvName.setText(displayText);
 
-        // Selection state manually handled via text color to prevent focus conflicts
-        boolean isSelected = (position == selectedPosition);
+        // Set selected state
+        holder.tvName.setSelected(position == selectedPosition);
 
-        // Text color based on selection and focus
-        if (holder.tvName.hasFocus() || position == selectedPosition) {
-            holder.tvName.setTextColor(0xFFFFFFFF); // White when focused or selected
-        } else {
-            holder.tvName.setTextColor(0xFFC4C4D0); // Dim when normal
-        }
+        // Use ColorStateList for text color to automatically handle focus and selected states
+        int[][] states = new int[][] {
+            new int[] { android.R.attr.state_focused },
+            new int[] { android.R.attr.state_selected },
+            new int[] {}
+        };
+        int[] colors = new int[] {
+            0xFFFFFFFF, // focused text color (white)
+            0xFFFFFFFF, // selected text color (white)
+            0xFFC4C4D0  // default text color (dim gray)
+        };
+        holder.tvName.setTextColor(new android.content.res.ColorStateList(states, colors));
 
         // Focus animation (scale & elevation)
         holder.tvName.setOnFocusChangeListener((v, hasFocus) -> {
             if (hasFocus) {
                 v.animate().scaleX(1.04f).scaleY(1.04f).translationZ(6f).setDuration(150).start();
-                holder.tvName.setTextColor(0xFFFFFFFF);
                 
                 int adapterPos = holder.getAdapterPosition();
                 if (adapterPos != RecyclerView.NO_POSITION && adapterPos != selectedPosition) {
-                    setSelectedPosition(adapterPos);
+                    setSelectedPosition(adapterPos, false); // Do NOT notify new position to avoid focus loss
+                    v.setSelected(true);
                     if (listener != null) {
                         listener.onCategorySelected(categories.get(adapterPos), adapterPos);
                     }
@@ -106,10 +133,8 @@ public class CategoryAdapter extends RecyclerView.Adapter<CategoryAdapter.Catego
             } else {
                 v.animate().scaleX(1.0f).scaleY(1.0f).translationZ(0f).setDuration(150).start();
                 int adapterPos = holder.getAdapterPosition();
-                if (adapterPos == selectedPosition) {
-                    holder.tvName.setTextColor(0xFFFFFFFF);
-                } else {
-                    holder.tvName.setTextColor(0xFFC4C4D0);
+                if (adapterPos != RecyclerView.NO_POSITION) {
+                    v.setSelected(adapterPos == selectedPosition);
                 }
             }
         });
@@ -117,9 +142,12 @@ public class CategoryAdapter extends RecyclerView.Adapter<CategoryAdapter.Catego
         // Click handler
         holder.tvName.setOnClickListener(v -> {
             int adapterPos = holder.getAdapterPosition();
-            if (adapterPos != RecyclerView.NO_POSITION && listener != null) {
-                setSelectedPosition(adapterPos);
-                listener.onCategoryClick(categories.get(adapterPos), adapterPos);
+            if (adapterPos != RecyclerView.NO_POSITION) {
+                setSelectedPosition(adapterPos, false);
+                v.setSelected(true);
+                if (listener != null) {
+                    listener.onCategoryClick(categories.get(adapterPos), adapterPos);
+                }
             }
         });
     }
@@ -148,6 +176,7 @@ public class CategoryAdapter extends RecyclerView.Adapter<CategoryAdapter.Catego
         if (lower.contains("music")) return "🎵";
         if (lower.contains("kids") || lower.contains("cartoon")) return "🧸";
         if (lower.contains("entertainment")) return "🎭";
+        if (lower.contains("religious") || lower.contains("quran") || lower.contains("islam")) return "🕌";
         return "📺";
     }
 
@@ -155,13 +184,13 @@ public class CategoryAdapter extends RecyclerView.Adapter<CategoryAdapter.Catego
      * Find position of a category by name.
      */
     public int findPosition(String category) {
-        if (category == null) return 0;
+        if (category == null) return -1;
         for (int i = 0; i < categories.size(); i++) {
             if (category.equals(categories.get(i))) {
                 return i;
             }
         }
-        return 0;
+        return -1;
     }
 
     static class CategoryViewHolder extends RecyclerView.ViewHolder {

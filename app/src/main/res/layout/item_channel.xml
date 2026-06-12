@@ -20,16 +20,18 @@
     android:clipChildren="false"
     android:clipToPadding="false">
 
-    <!-- Channel Initial Circle -->
+    <!-- Channel Initial Circle (Avatar) -->
     <TextView
         android:id="@+id/tv_channel_initial"
-        android:layout_width="36dp"
-        android:layout_height="36dp"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
         android:gravity="center"
-        android:textColor="@color/text_primary"
-        android:textSize="16sp"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
         android:textStyle="bold"
-        android:background="@drawable/bg_channel_initial" />
+        android:fontFamily="sans-serif-medium"
+        android:background="@drawable/bg_channel_initial"
+        android:elevation="4dp" />
 
     <!-- Channel Name -->
     <TextView
@@ -37,20 +39,43 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:layout_marginStart="10dp"
-        android:textColor="@color/text_primary"
-        android:textSize="15sp"
+        android:layout_marginStart="14dp"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:fontFamily="sans-serif-medium"
         android:singleLine="true"
         android:ellipsize="end" />
 
-    <!-- Live indicator -->
-    <TextView
+    <!-- Premium Live Indicator Badge -->
+    <LinearLayout
         android:id="@+id/tv_live_dot"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="●"
-        android:textColor="@color/cat_sports"
-        android:textSize="8sp"
-        android:visibility="gone" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_live_badge"
+        android:paddingStart="6dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:layout_marginStart="8dp"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:background="@drawable/shape_circle_red"
+            android:layout_marginEnd="4dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="LIVE"
+            android:textColor="#FFFFFFFF"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:fontFamily="sans-serif-condensed" />
+    </LinearLayout>
 
 </LinearLayout>

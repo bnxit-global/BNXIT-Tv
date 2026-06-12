@@ -14,7 +14,7 @@ import java.util.List;
 
 /**
  * RecyclerView adapter for the channel list.
- * Optimized for TV: focus-based highlighting, no animations, ViewHolder pattern.
+ * Optimized for TV: stable IDs, payload updates, focus-based highlighting.
  */
 public class ChannelAdapter extends RecyclerView.Adapter<ChannelAdapter.ChannelViewHolder> {
 
@@ -33,6 +33,16 @@ public class ChannelAdapter extends RecyclerView.Adapter<ChannelAdapter.ChannelV
 
     public interface OnChannelClickListener {
         void onChannelClick(ChannelModel channel, int position);
+    }
+
+    public ChannelAdapter() {
+        setHasStableIds(true);
+    }
+
+    @Override
+    public long getItemId(int position) {
+        ChannelModel ch = channels.get(position);
+        return ch.url != null ? ch.url.hashCode() : position;
     }
 
     public void setOnChannelClickListener(OnChannelClickListener listener) {
@@ -71,6 +81,14 @@ public class ChannelAdapter extends RecyclerView.Adapter<ChannelAdapter.ChannelV
         }
     }
 
+    public int getSelectedPosition() {
+        return selectedPosition;
+    }
+
+    public List<ChannelModel> getChannels() {
+        return channels;
+    }
+
     @NonNull
     @Override
     public ChannelViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
@@ -84,12 +102,12 @@ public class ChannelAdapter extends RecyclerView.Adapter<ChannelAdapter.ChannelV
         if (payloads.isEmpty()) {
             onBindViewHolder(holder, position);
         } else {
+            // Payload update: only change live dot + text color. No rebind = no focus loss.
             ChannelModel channel = channels.get(position);
             boolean isCurrentlyPlaying = currentPlayingUrl != null && currentPlayingUrl.equals(channel.url);
             holder.tvLiveDot.setVisibility(isCurrentlyPlaying ? View.VISIBLE : View.GONE);
 
-            boolean isSelected = (position == selectedPosition);
-            if (holder.itemView.hasFocus() || isSelected || isCurrentlyPlaying) {
+            if (holder.itemView.hasFocus() || position == selectedPosition || isCurrentlyPlaying) {
                 holder.tvName.setTextColor(0xFFFFFFFF);
             } else {
                 holder.tvName.setTextColor(0xFFC4C4D0);
@@ -116,9 +134,6 @@ public class ChannelAdapter extends RecyclerView.Adapter<ChannelAdapter.ChannelV
         // Live indicator
         boolean isCurrentlyPlaying = currentPlayingUrl != null && currentPlayingUrl.equals(channel.url);
         holder.tvLiveDot.setVisibility(isCurrentlyPlaying ? View.VISIBLE : View.GONE);
-
-        // Selection state logic manually handled via text color to avoid VerticalGridView focus conflicts
-        boolean isSelected = (position == selectedPosition);
 
         // Text color based on selection/focus/playing states
         if (holder.itemView.hasFocus() || position == selectedPosition || isCurrentlyPlaying) {
@@ -204,7 +219,7 @@ public class ChannelAdapter extends RecyclerView.Adapter<ChannelAdapter.ChannelV
     static class ChannelViewHolder extends RecyclerView.ViewHolder {
         final TextView tvInitial;
         final TextView tvName;
-        final TextView tvLiveDot;
+        final View tvLiveDot;
 
         ChannelViewHolder(@NonNull View itemView) {
             super(itemView);

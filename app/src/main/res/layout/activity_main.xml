@@ -21,10 +21,11 @@
         android:clickable="true" />
 
     <!-- MIDDLE LAYER: Translucent Navigation Panels -->
-    <FrameLayout
+    <LinearLayout
         android:id="@+id/panels_container"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:orientation="horizontal"
         android:clipChildren="false"
         android:clipToPadding="false"
         android:visibility="gone">
@@ -98,19 +99,6 @@
                 android:layout_marginStart="16dp"
                 android:layout_marginEnd="16dp" />
 
-            <!-- Subheading -->
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Categories"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:paddingStart="20dp"
-                android:paddingEnd="20dp"
-                android:paddingTop="12dp"
-                android:paddingBottom="4dp" />
-
             <androidx.leanback.widget.VerticalGridView
                 android:id="@+id/rv_categories"
                 android:layout_width="match_parent"
@@ -142,18 +130,38 @@
             android:clipToPadding="false"
             android:visibility="gone">
 
-            <!-- Category Header Title -->
-            <TextView
-                android:id="@+id/tv_category_title"
+            <!-- Header Row: Category Title + Search Button -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/all_categories"
-                android:textColor="@color/text_primary"
-                android:textSize="20sp"
-                android:textStyle="bold"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
                 android:paddingStart="20dp"
-                android:paddingEnd="20dp"
-                android:paddingBottom="4dp" />
+                android:paddingEnd="12dp"
+                android:paddingBottom="4dp">
+
+                <TextView
+                    android:id="@+id/tv_category_title"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/all_categories"
+                    android:textColor="@color/text_primary"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/btn_search"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🔍"
+                    android:textSize="20sp"
+                    android:padding="8dp"
+                    android:focusable="true"
+                    android:focusableInTouchMode="true"
+                    android:background="?android:attr/selectableItemBackground" />
+
+            </LinearLayout>
 
             <!-- Channel Count Badge -->
             <TextView
@@ -186,7 +194,90 @@
 
         </LinearLayout>
 
-    </FrameLayout>
+        <!-- Search Panel (drill-down from channel panel) -->
+        <LinearLayout
+            android:id="@+id/search_panel"
+            android:layout_width="360dp"
+            android:layout_height="match_parent"
+            android:layout_gravity="start"
+            android:orientation="vertical"
+            android:background="@drawable/bg_panel"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="24dp"
+            android:layout_marginStart="24dp"
+            android:paddingTop="16dp"
+            android:paddingBottom="16dp"
+            android:elevation="12dp"
+            android:clipChildren="false"
+            android:clipToPadding="false"
+            android:visibility="gone">
+
+            <!-- Search Header -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🔍 Search Channels"
+                android:textColor="@color/text_primary"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:paddingBottom="12dp" />
+
+            <!-- Search Input -->
+            <EditText
+                android:id="@+id/et_search"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:hint="Type channel name..."
+                android:textColor="#FFFFFFFF"
+                android:textColorHint="#80FFFFFF"
+                android:textSize="15sp"
+                android:singleLine="true"
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:background="@drawable/bg_search_input"
+                android:focusable="true"
+                android:focusableInTouchMode="true" />
+
+            <!-- Search Results Count -->
+            <TextView
+                android:id="@+id/tv_search_count"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_dim"
+                android:textSize="13sp"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="6dp" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/divider"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp" />
+
+            <!-- Search Results List -->
+            <androidx.leanback.widget.VerticalGridView
+                android:id="@+id/rv_search_results"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:paddingTop="8dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:clipToPadding="true"
+                android:clipChildren="false" />
+
+        </LinearLayout>
+
+    </LinearLayout>
 
     <!-- FRONT LAYER: HUDs, Overlays & Loading -->
 
@@ -363,16 +454,13 @@
             <!-- Menu / Channels Button (Moved to first) -->
             <TextView
                 android:id="@+id/btn_menu"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="☰ CHANNELS"
+                android:layout_width="54dp"
+                android:layout_height="54dp"
+                android:gravity="center"
+                android:text="☰"
                 android:textColor="@color/text_primary"
-                android:textSize="15sp"
+                android:textSize="20sp"
                 android:textStyle="bold"
-                android:paddingStart="24dp"
-                android:paddingEnd="24dp"
-                android:paddingTop="12dp"
-                android:paddingBottom="12dp"
                 android:background="@drawable/bg_item_focus"
                 android:focusable="true"
                 android:clickable="true"
@@ -381,16 +469,13 @@
             <!-- Quality Selector Button -->
             <TextView
                 android:id="@+id/btn_quality"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="⚙ QUALITY (Auto)"
+                android:layout_width="54dp"
+                android:layout_height="54dp"
+                android:gravity="center"
+                android:text="⚙"
                 android:textColor="@color/text_primary"
-                android:textSize="15sp"
+                android:textSize="20sp"
                 android:textStyle="bold"
-                android:paddingStart="24dp"
-                android:paddingEnd="24dp"
-                android:paddingTop="12dp"
-                android:paddingBottom="12dp"
                 android:background="@drawable/bg_item_focus"
                 android:focusable="true"
                 android:clickable="true"
@@ -399,16 +484,28 @@
             <!-- Aspect Ratio Button -->
             <TextView
                 android:id="@+id/btn_aspect"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="📺 ASPECT (Fit)"
+                android:layout_width="54dp"
+                android:layout_height="54dp"
+                android:gravity="center"
+                android:text="📺"
                 android:textColor="@color/text_primary"
-                android:textSize="15sp"
+                android:textSize="20sp"
                 android:textStyle="bold"
-                android:paddingStart="24dp"
-                android:paddingEnd="24dp"
-                android:paddingTop="12dp"
-                android:paddingBottom="12dp"
+                android:background="@drawable/bg_item_focus"
+                android:focusable="true"
+                android:clickable="true"
+                android:layout_marginEnd="16dp" />
+
+            <!-- Refresh Channels Button -->
+            <TextView
+                android:id="@+id/btn_refresh"
+                android:layout_width="54dp"
+                android:layout_height="54dp"
+                android:gravity="center"
+                android:text="🔄"
+                android:textColor="@color/text_primary"
+                android:textSize="20sp"
+                android:textStyle="bold"
                 android:background="@drawable/bg_item_focus"
                 android:focusable="true"
                 android:clickable="true"
@@ -417,16 +514,13 @@
             <!-- Developer Info Button -->
             <TextView
                 android:id="@+id/btn_developer"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="ℹ DEVELOPER INFO"
+                android:layout_width="54dp"
+                android:layout_height="54dp"
+                android:gravity="center"
+                android:text="ℹ"
                 android:textColor="@color/text_primary"
-                android:textSize="15sp"
+                android:textSize="20sp"
                 android:textStyle="bold"
-                android:paddingStart="24dp"
-                android:paddingEnd="24dp"
-                android:paddingTop="12dp"
-                android:paddingBottom="12dp"
                 android:background="@drawable/bg_item_focus"
                 android:focusable="true"
                 android:clickable="true" />

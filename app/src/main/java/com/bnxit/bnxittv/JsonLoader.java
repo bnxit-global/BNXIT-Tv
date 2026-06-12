@@ -34,7 +34,10 @@ import java.util.concurrent.Executors;
  * 3. Next launch: load from cache (fast), then refresh from GitHub in background
  * 4. If network fails: use cache, if no cache: use assets
  *
- * GitHub URLs auto-update when you push changes to the repo.
+ * Supports:
+ * - JSON array format: [ { "name": "...", "url": "..." } ]
+ * - Wrapped JSON format: { "channels": [ { "name": "...", "url": "..." } ] }
+ * - M3U playlist format: #EXTM3U / #EXTINF / URL lines
  */
 public class JsonLoader {
 
@@ -45,7 +48,9 @@ public class JsonLoader {
             "https://raw.githubusercontent.com/SHAJON-404/iptv/refs/heads/main/app/data/bangla.json",
             "https://raw.githubusercontent.com/SHAJON-404/iptv/refs/heads/main/app/data/sports.json",
             "https://raw.githubusercontent.com/SHAJON-404/iptv/refs/heads/main/app/data/fifa.json",
-            "https://raw.githubusercontent.com/SHAJON-404/iptv/refs/heads/main/app/data/channels.json"
+            "https://raw.githubusercontent.com/SHAJON-404/iptv/refs/heads/main/app/data/channels.json",
+            "https://raw.githubusercontent.com/abusaeeidx/Mrgify-BDIX-IPTV/refs/heads/main/Channels_data.json",
+            "https://raw.githubusercontent.com/abusaeeidx/Mrgify-BDIX-IPTV/main/playlist.m3u"
     };
 
     // Cache filenames in internal storage
@@ -53,7 +58,9 @@ public class JsonLoader {
             "cache_bangla.json",
             "cache_sports.json",
             "cache_fifa.json",
-            "cache_channels.json"
+            "cache_channels.json",
+            "cache_mrgify_channels.json",
+            "cache_mrgify_playlist.m3u"
     };
 
     private static final int CONNECT_TIMEOUT = 10000;
@@ -75,8 +82,8 @@ public class JsonLoader {
     }
 
     /**
-     * Load channels: cache/assets first (fast), then refresh from GitHub in background.
-     * Calls callback on main thread when ready.
+     * Load channels from cache (local files) only.
+     * Only refreshes from remote if the cache is completely empty.
      */
     public void loadAsync(Context context, LoadCallback callback) {
         if (linkChecker == null) {
@@ -94,7 +101,7 @@ public class JsonLoader {
 
         executor.execute(() -> {
             try {
-                // Step 1: Load from cache (instant)
+                // Load from cache (instant)
                 loadFromCache(context);
 
                 // Notify UI — data is ready for display
@@ -106,8 +113,11 @@ public class JsonLoader {
                     }
                 });
 
-                // Step 2: Refresh from GitHub in background
-                refreshFromRemote(context, callback);
+                // Only perform automatic remote download if local cache is empty
+                if (chCount == 0) {
+                    Log.d(TAG, "Cache is empty. Performing initial remote download.");
+                    refreshFromRemote(context, callback);
+                }
 
             } catch (Exception e) {
                 Log.e(TAG, "Load error", e);
@@ -126,6 +136,27 @@ public class JsonLoader {
     }
 
     /**
+     * Manually refresh channels from remote URLs.
+     */
+    public void manualRefreshAsync(Context context, LoadCallback callback) {
+        if (linkChecker == null) {
+            linkChecker = new LinkChecker(context);
+        }
+        executor.execute(() -> {
+            try {
+                refreshFromRemote(context, callback);
+            } catch (Exception e) {
+                Log.e(TAG, "Manual refresh error", e);
+                mainHandler.post(() -> {
+                    if (callback != null) {
+                        callback.onError(e.getMessage());
+                    }
+                });
+            }
+        });
+    }
+
+    /**
      * Load from local cache files.
      */
     private void loadFromCache(Context context) {
@@ -137,10 +168,10 @@ public class JsonLoader {
         for (int i = 0; i < CACHE_FILES.length; i++) {
             File cacheFile = new File(context.getFilesDir(), CACHE_FILES[i]);
             if (cacheFile.exists() && cacheFile.length() > 0) {
-                String json = readFile(cacheFile);
+                String data = readFile(cacheFile);
                 Log.d(TAG, "Loaded from cache: " + CACHE_FILES[i]);
-                if (json != null && !json.isEmpty()) {
-                    parseJsonArray(json, seenUrls, categorySet);
+                if (data != null && !data.isEmpty()) {
+                    parseAnyFormat(data, seenUrls, categorySet, allChannels);
                 }
             }
         }
@@ -168,23 +199,23 @@ public class JsonLoader {
 
         for (int i = 0; i < REMOTE_URLS.length; i++) {
             try {
-                String json = downloadUrl(REMOTE_URLS[i]);
+                String data = downloadUrl(REMOTE_URLS[i]);
 
-                if (json != null && !json.isEmpty() && json.trim().startsWith("[")) {
+                if (data != null && !data.isEmpty()) {
                     // Save to cache
-                    saveToCache(context, CACHE_FILES[i], json);
+                    saveToCache(context, CACHE_FILES[i], data);
                     anyUpdated = true;
                     Log.d(TAG, "Updated from remote: " + REMOTE_URLS[i]);
                 } else {
                     // Use cached version for this file
                     File cacheFile = new File(context.getFilesDir(), CACHE_FILES[i]);
                     if (cacheFile.exists()) {
-                        json = readFile(cacheFile);
+                        data = readFile(cacheFile);
                     }
                 }
 
-                if (json != null && !json.isEmpty()) {
-                    parseJsonArrayInto(json, seenUrls, categorySet, freshChannels);
+                if (data != null && !data.isEmpty()) {
+                    parseAnyFormat(data, seenUrls, categorySet, freshChannels);
                 }
 
             } catch (Exception e) {
@@ -194,9 +225,9 @@ public class JsonLoader {
                 try {
                     File cacheFile = new File(context.getFilesDir(), CACHE_FILES[i]);
                     if (cacheFile.exists()) {
-                        String json = readFile(cacheFile);
-                        if (json != null && !json.isEmpty()) {
-                            parseJsonArrayInto(json, seenUrls, categorySet, freshChannels);
+                        String data = readFile(cacheFile);
+                        if (data != null && !data.isEmpty()) {
+                            parseAnyFormat(data, seenUrls, categorySet, freshChannels);
                         }
                     }
                 } catch (Exception ex) {
@@ -232,7 +263,234 @@ public class JsonLoader {
         }
     }
 
-    // ---- Parsing ----
+    // ---- Multi-format Parser ----
+
+    /**
+     * Detect and parse any supported format: M3U, JSON array, or wrapped JSON object.
+     */
+    private void parseAnyFormat(String data, Set<String> seenUrls, Set<String> categorySet, List<ChannelModel> target) {
+        String trimmed = data.trim();
+        if (trimmed.startsWith("#EXTM3U") || trimmed.startsWith("#EXTINF")) {
+            parseM3U(data, seenUrls, categorySet, target);
+        } else if (trimmed.startsWith("{")) {
+            parseWrappedJson(data, seenUrls, categorySet, target);
+        } else if (trimmed.startsWith("[")) {
+            parseJsonArrayInto(data, seenUrls, categorySet, target);
+        } else {
+            Log.w(TAG, "Unknown data format, skipping");
+        }
+    }
+
+    // ---- M3U Parser ----
+
+    private boolean isValidChannel(String name, String url) {
+        if (name == null || name.trim().isEmpty() || url == null || url.trim().isEmpty()) {
+            return false;
+        }
+
+        String lowerName = name.toLowerCase().trim();
+        String lowerUrl = url.toLowerCase().trim();
+
+        // Filter out dummy/separator names (items that are just text headings or links)
+        if (lowerName.contains("===") || 
+            lowerName.contains("---") || 
+            lowerName.contains("___") || 
+            lowerName.contains("***") || 
+            lowerName.contains("|||") ||
+            lowerName.contains(":::") ||
+            lowerName.startsWith("#") ||
+            lowerName.contains("developed by") ||
+            lowerName.contains("join telegram") ||
+            lowerName.contains("telegram channel") ||
+            lowerName.contains("click here") ||
+            lowerName.contains("subscribe") ||
+            lowerName.contains("contact me") ||
+            lowerName.contains("contact developer")) {
+            return false;
+        }
+
+        // Filter out dummy/invalid URLs
+        if (!lowerUrl.startsWith("http://") && !lowerUrl.startsWith("https://")) {
+            return false;
+        }
+
+        if (lowerUrl.contains("null") || 
+            lowerUrl.contains("empty") || 
+            lowerUrl.contains("t.me") || 
+            lowerUrl.contains("telegram.me") ||
+            lowerUrl.equals("http://") || 
+            lowerUrl.equals("https://")) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Parse M3U/M3U8 playlist format.
+     * Extracts channel name from #EXTINF line and URL from the next line.
+     * Supports group-title attribute for category.
+     */
+    private void parseM3U(String data, Set<String> seenUrls, Set<String> categorySet, List<ChannelModel> target) {
+        try {
+            String[] lines = data.split("\\r?\\n");
+            String pendingName = null;
+            String pendingGroup = null;
+
+            for (String line : lines) {
+                line = line.trim();
+                if (line.isEmpty() || line.equals("#EXTM3U")) continue;
+
+                if (line.startsWith("#EXTINF:")) {
+                    // Parse name: everything after the last comma
+                    int lastComma = line.lastIndexOf(',');
+                    if (lastComma >= 0 && lastComma < line.length() - 1) {
+                        pendingName = line.substring(lastComma + 1).trim();
+                    } else {
+                        pendingName = "Unknown";
+                    }
+
+                    // Parse group-title attribute if present
+                    pendingGroup = extractAttribute(line, "group-title");
+                    if (pendingGroup == null || pendingGroup.isEmpty()) {
+                        pendingGroup = "Other";
+                    }
+                } else if (!line.startsWith("#")) {
+                    // This is a URL line
+                    String url = line;
+                    if (url.isEmpty()) {
+                        pendingName = null;
+                        pendingGroup = null;
+                        continue;
+                    }
+
+                    // Deduplicate by URL
+                    if (seenUrls.contains(url)) {
+                        pendingName = null;
+                        pendingGroup = null;
+                        continue;
+                    }
+
+                    // Filter out invalid/dummy text items
+                    if (!isValidChannel(pendingName, url)) {
+                        pendingName = null;
+                        pendingGroup = null;
+                        continue;
+                    }
+
+                    seenUrls.add(url);
+
+                    // Skip if cached as broken
+                    if (linkChecker != null && linkChecker.isLinkCachedAsBroken(url)) {
+                        pendingName = null;
+                        pendingGroup = null;
+                        continue;
+                    }
+
+                    ChannelModel channel = new ChannelModel();
+                    channel.name = pendingName;
+                    channel.url = url;
+                    channel.group = pendingGroup != null ? pendingGroup : "Other";
+                    channel.logo = "";
+
+                    target.add(channel);
+
+                    // Add category
+                    String[] split = channel.group.split(";");
+                    for (String g : split) {
+                        String trimmedG = g.trim();
+                        if (!trimmedG.isEmpty()) {
+                            categorySet.add(capitalizeCategory(trimmedG));
+                        }
+                    }
+
+                    pendingName = null;
+                    pendingGroup = null;
+                }
+            }
+            Log.d(TAG, "M3U parsed: added channels to pool");
+        } catch (Exception e) {
+            Log.e(TAG, "M3U parse error", e);
+        }
+    }
+
+    /**
+     * Extract an attribute value from an #EXTINF line.
+     * Example: #EXTINF:-1 group-title="News",Channel Name
+     * Returns "News" for attribute "group-title".
+     */
+    private String extractAttribute(String line, String attribute) {
+        String search = attribute + "=\"";
+        int start = line.indexOf(search);
+        if (start < 0) return null;
+        start += search.length();
+        int end = line.indexOf('"', start);
+        if (end < 0) return null;
+        return line.substring(start, end).trim();
+    }
+
+    // ---- Wrapped JSON Parser ----
+
+    /**
+     * Parse JSON object with "channels" array: { "info": {...}, "channels": [...] }
+     */
+    private void parseWrappedJson(String json, Set<String> seenUrls, Set<String> categorySet, List<ChannelModel> target) {
+        try {
+            JSONObject root = new JSONObject(json);
+            if (root.has("channels")) {
+                JSONArray channelsArray = root.getJSONArray("channels");
+                int len = channelsArray.length();
+                for (int i = 0; i < len; i++) {
+                    JSONObject obj = channelsArray.getJSONObject(i);
+                    String url = obj.optString("url", "");
+                    if (url.isEmpty()) continue;
+
+                    String name = obj.optString("name", "");
+                    // Filter out invalid/dummy text items
+                    if (!isValidChannel(name, url)) continue;
+
+                    // Deduplicate by URL
+                    if (seenUrls.contains(url)) continue;
+                    seenUrls.add(url);
+
+                    // Skip if cached as broken
+                    if (linkChecker != null && linkChecker.isLinkCachedAsBroken(url)) continue;
+
+                    ChannelModel channel = new ChannelModel();
+                    channel.name = name;
+                    channel.url = url;
+                    channel.group = obj.optString("group", "Other");
+                    channel.logo = obj.optString("logo", "");
+                    channel.id = obj.optString("id", "");
+                    channel.type = obj.optString("type", null);
+                    channel.kid = obj.optString("kid", null);
+                    channel.key = obj.optString("key", null);
+                    channel.status = obj.optString("status", null);
+
+                    if (channel.group == null || channel.group.isEmpty()) {
+                        channel.group = "Other";
+                    }
+
+                    target.add(channel);
+
+                    String[] split = channel.group.split(";");
+                    for (String g : split) {
+                        String trimmed = g.trim();
+                        if (!trimmed.isEmpty()) {
+                            categorySet.add(capitalizeCategory(trimmed));
+                        }
+                    }
+                }
+                Log.d(TAG, "Wrapped JSON parsed: " + len + " entries");
+            } else {
+                Log.w(TAG, "JSON object has no 'channels' key, skipping");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Wrapped JSON parse error", e);
+        }
+    }
+
+    // ---- JSON Array Parser ----
  
     private String capitalizeCategory(String cat) {
         if (cat == null || cat.isEmpty()) return "";
@@ -270,6 +528,10 @@ public class JsonLoader {
                 String url = obj.optString("url", "");
                 if (url.isEmpty()) continue;
 
+                String name = obj.optString("name", "Unknown");
+                // Filter out invalid/dummy text items
+                if (!isValidChannel(name, url)) continue;
+
                 // Deduplicate by URL
                 if (seenUrls.contains(url)) continue;
                 seenUrls.add(url);
@@ -280,7 +542,7 @@ public class JsonLoader {
                 }
 
                 ChannelModel channel = new ChannelModel();
-                channel.name = obj.optString("name", "Unknown");
+                channel.name = name;
                 channel.logo = obj.optString("logo", "");
                 channel.group = obj.optString("group", "Other");
                 channel.url = url;
@@ -390,7 +652,7 @@ public class JsonLoader {
             conn.setReadTimeout(READ_TIMEOUT);
             conn.setRequestMethod("GET");
             conn.setRequestProperty("User-Agent", "BNXIT-TV/1.0");
-            conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("Accept", "*/*");
 
             int responseCode = conn.getResponseCode();
             if (responseCode != 200) {
@@ -472,6 +734,34 @@ public class JsonLoader {
 
     public synchronized List<ChannelModel> getAllChannels() {
         return new ArrayList<>(allChannels);
+    }
+
+    /**
+     * Search channels by name (case-insensitive contains match).
+     * Returns matching channels sorted by relevance (starts-with first, then contains).
+     */
+    public synchronized List<ChannelModel> searchChannels(String query) {
+        if (query == null || query.trim().isEmpty()) {
+            return new ArrayList<>();
+        }
+        String lowerQuery = query.trim().toLowerCase();
+        List<ChannelModel> startsWithMatches = new ArrayList<>();
+        List<ChannelModel> containsMatches = new ArrayList<>();
+
+        for (ChannelModel ch : allChannels) {
+            if (ch.name == null) continue;
+            String lowerName = ch.name.toLowerCase();
+            if (lowerName.startsWith(lowerQuery)) {
+                startsWithMatches.add(ch);
+            } else if (lowerName.contains(lowerQuery)) {
+                containsMatches.add(ch);
+            }
+        }
+
+        List<ChannelModel> results = new ArrayList<>(startsWithMatches.size() + containsMatches.size());
+        results.addAll(startsWithMatches);
+        results.addAll(containsMatches);
+        return results;
     }
 
     public synchronized int getTotalCount() {

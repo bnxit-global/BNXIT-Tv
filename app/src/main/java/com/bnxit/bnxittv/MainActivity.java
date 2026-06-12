@@ -3,10 +3,14 @@ package com.bnxit.bnxittv;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -29,8 +33,9 @@ import java.util.List;
  * - Focus-based highlighting
  * - Instant channel switching
  * - Auto-play last channel on startup
- * - Loading/error/placeholder overlays
+ * - Loading/error/placeholder overlays (alpha-animated to prevent scroll resets)
  * - Remote JSON loading from GitHub with cache + asset fallback
+ * - Channel search with live filtering
  */
 public class MainActivity extends AppCompatActivity implements
         PlayerManager.PlayerCallback,
@@ -51,14 +56,22 @@ public class MainActivity extends AppCompatActivity implements
     private LinearLayout nowPlayingBar;
     private View loadingOverlay;
     private View errorOverlay;
-    private View placeholderOverlay;
     private View panelsContainer;
     private View startupLoader;
+
+    // Search Components
+    private View searchPanel;
+    private EditText etSearch;
+    private TextView tvSearchCount;
+    private RecyclerView rvSearchResults;
+    private TextView btnSearch;
+    private ChannelAdapter searchAdapter;
 
     // Controls HUD Components
     private View controlsHud;
     private TextView btnQuality;
     private TextView btnAspect;
+    private TextView btnRefresh;
     private TextView btnMenu;
     private TextView btnDeveloper;
     private View developerInfoOverlay;
@@ -78,6 +91,7 @@ public class MainActivity extends AppCompatActivity implements
     // State
     private String currentCategory = "All";
     private boolean isPanelVisible = true;
+    private boolean isInitialLoadDone = false;
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private final Runnable autoHideRunnable = () -> {
         togglePanels(false);
@@ -97,6 +111,7 @@ public class MainActivity extends AppCompatActivity implements
         initAdapters();
         initPlayer();
         initControlListeners();
+        initSearch();
 
         // Screen tap toggles controls HUD or hides side panels
         playerView.setOnClickListener(v -> {
@@ -127,14 +142,34 @@ public class MainActivity extends AppCompatActivity implements
         panelsContainer = findViewById(R.id.panels_container);
         startupLoader = findViewById(R.id.startup_loader);
 
+        // Search views
+        searchPanel = findViewById(R.id.search_panel);
+        etSearch = findViewById(R.id.et_search);
+        tvSearchCount = findViewById(R.id.tv_search_count);
+        rvSearchResults = findViewById(R.id.rv_search_results);
+        btnSearch = findViewById(R.id.btn_search);
+
         controlsHud = findViewById(R.id.player_controls_hud);
         btnQuality = findViewById(R.id.btn_quality);
         btnAspect = findViewById(R.id.btn_aspect);
+        btnRefresh = findViewById(R.id.btn_refresh);
         btnMenu = findViewById(R.id.btn_menu);
         btnDeveloper = findViewById(R.id.btn_developer);
         developerInfoOverlay = findViewById(R.id.developer_info_overlay);
         btnCloseDeveloper = findViewById(R.id.btn_close_developer);
         bioScrollView = findViewById(R.id.bio_scrollview);
+
+        // Make overlays non-focusable so they never steal focus from VerticalGridView
+        loadingOverlay.setFocusable(false);
+        loadingOverlay.setFocusableInTouchMode(false);
+        errorOverlay.setFocusable(false);
+        errorOverlay.setFocusableInTouchMode(false);
+
+        // Start overlays as invisible (alpha=0) instead of GONE to prevent layout passes
+        loadingOverlay.setAlpha(0f);
+        loadingOverlay.setVisibility(View.VISIBLE);
+        errorOverlay.setAlpha(0f);
+        errorOverlay.setVisibility(View.VISIBLE);
     }
 
     private void initAdapters() {
@@ -164,6 +199,92 @@ public class MainActivity extends AppCompatActivity implements
         playerManager.init(playerView);
     }
 
+    private void initSearch() {
+        // Search adapter (reuse ChannelAdapter for results)
+        searchAdapter = new ChannelAdapter();
+        searchAdapter.setOnChannelClickListener((channel, position) -> {
+            // Play the selected search result
+            playChannel(channel);
+            // Close search and panels
+            hideSearch();
+            togglePanels(false);
+        });
+
+        rvSearchResults.setAdapter(searchAdapter);
+        rvSearchResults.setHasFixedSize(true);
+        rvSearchResults.setItemAnimator(null);
+        rvSearchResults.setItemViewCacheSize(20);
+
+        // Search button opens search panel
+        if (btnSearch != null) {
+            btnSearch.setOnClickListener(v -> showSearch());
+        }
+
+        // Live filtering as user types
+        etSearch.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                performSearch(s.toString());
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {}
+        });
+    }
+
+    private void showSearch() {
+        if (searchPanel == null) return;
+
+        // Hide channel panel, show search panel
+        findViewById(R.id.channel_panel).setVisibility(View.GONE);
+        searchPanel.setVisibility(View.VISIBLE);
+
+        // Clear previous search
+        etSearch.setText("");
+        tvSearchCount.setText("Type to search channels...");
+        searchAdapter.setChannels(null);
+
+        // Focus on the EditText
+        etSearch.requestFocus();
+
+        // Show on-screen keyboard for TV
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.showSoftInput(etSearch, InputMethodManager.SHOW_IMPLICIT);
+        }
+
+        cancelAutoHideTimer();
+    }
+
+    private void hideSearch() {
+        if (searchPanel == null) return;
+        searchPanel.setVisibility(View.GONE);
+
+        // Hide keyboard
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.hideSoftInputFromWindow(etSearch.getWindowToken(), 0);
+        }
+    }
+
+    private void performSearch(String query) {
+        if (jsonLoader == null) return;
+
+        List<ChannelModel> results = jsonLoader.searchChannels(query);
+        searchAdapter.setChannels(results);
+
+        if (query.trim().isEmpty()) {
+            tvSearchCount.setText("Type to search channels...");
+        } else if (results.isEmpty()) {
+            tvSearchCount.setText("No channels found for \"" + query + "\"");
+        } else {
+            tvSearchCount.setText(results.size() + " channels found");
+        }
+    }
+
     /**
      * Load channel data asynchronously.
      * First loads from cache/assets (instant), then refreshes from GitHub.
@@ -180,54 +301,117 @@ public class MainActivity extends AppCompatActivity implements
                 if (startupLoader != null) {
                     startupLoader.setVisibility(View.GONE);
                 }
-                // This is called on main thread
                 Log.d(TAG, "Channels loaded: " + channelCount + ", categories: " + categoryCount);
 
-                // Set categories
-                List<String> cats = jsonLoader.getCategories();
-                categoryAdapter.setCategories(cats);
+                if (!isInitialLoadDone) {
+                    // FIRST LOAD: set up adapters and auto-play
+                    isInitialLoadDone = true;
 
-                // Restore last category
-                String lastCategory = prefManager.getLastCategory();
-                int catPos = categoryAdapter.findPosition(lastCategory);
-                if (catPos >= 0) {
-                    categoryAdapter.setSelectedPosition(catPos);
-                    currentCategory = lastCategory;
-                    rvCategories.scrollToPosition(catPos);
-                }
+                    // Set categories
+                    List<String> cats = jsonLoader.getCategories();
+                    categoryAdapter.setCategories(cats);
 
-                // Load channels for current category
-                updateChannelList(currentCategory);
-
-                // Auto-play last channel (only on first load) or first channel fallback
-                if (!playerManager.isPlaying()) {
-                    String lastUrl = prefManager.getLastChannelUrl();
-                    ChannelModel targetChannel = null;
-                    if (lastUrl != null) {
-                        targetChannel = jsonLoader.findByUrl(lastUrl);
+                    // Restore last category
+                    String lastCategory = prefManager.getLastCategory();
+                    int catPos = categoryAdapter.findPosition(lastCategory);
+                    if (catPos >= 0) {
+                        categoryAdapter.setSelectedPosition(catPos);
+                        currentCategory = lastCategory;
+                        rvCategories.scrollToPosition(catPos);
                     }
-                    
-                    // Fallback to the first channel in the current category if no last channel is found
-                    if (targetChannel == null) {
-                        List<ChannelModel> currentChannels = jsonLoader.getChannelsForCategory(currentCategory);
-                        if (currentChannels != null && !currentChannels.isEmpty()) {
-                            targetChannel = currentChannels.get(0);
+
+                    // Load channels for current category
+                    updateChannelList(currentCategory);
+
+                    // Auto-play last channel or first channel fallback
+                    if (!playerManager.isPlaying()) {
+                        String lastUrl = prefManager.getLastChannelUrl();
+                        ChannelModel targetChannel = null;
+                        if (lastUrl != null) {
+                            targetChannel = jsonLoader.findByUrl(lastUrl);
+                        }
+                        
+                        if (targetChannel == null) {
+                            List<ChannelModel> currentChannels = jsonLoader.getChannelsForCategory(currentCategory);
+                            if (currentChannels != null && !currentChannels.isEmpty()) {
+                                targetChannel = currentChannels.get(0);
+                            }
+                        }
+                        
+                        if (targetChannel != null) {
+                            playChannel(targetChannel);
+
+                            int chPos = channelAdapter.findPositionByUrl(targetChannel.url);
+                            if (chPos >= 0) {
+                                channelAdapter.setSelectedPosition(chPos);
+                                rvChannels.scrollToPosition(chPos);
+                            }
                         }
                     }
-                    
-                    if (targetChannel != null) {
-                        playChannel(targetChannel);
 
-                        int chPos = channelAdapter.findPositionByUrl(targetChannel.url);
-                        if (chPos >= 0) {
-                            channelAdapter.setSelectedPosition(chPos);
-                            rvChannels.scrollToPosition(chPos);
+                    rvChannels.requestFocus();
+                } else {
+                    // SUBSEQUENT LOADS (remote refresh, link checker):
+                    // Update adapters to keep data fresh, but preserve scroll and selection!
+                    tvChannelCount.setText(channelCount + " channels total");
+                    Log.d(TAG, "Background refresh: updating adapters while preserving scroll and selection.");
+
+                    // 1. Preserve category selection and focus
+                    boolean categoryHadFocus = rvCategories.hasFocus();
+                    List<String> cats = jsonLoader.getCategories();
+                    String activeCategory = currentCategory;
+                    
+                    categoryAdapter.setCategories(cats);
+                    
+                    int catPos = categoryAdapter.findPosition(activeCategory);
+                    if (catPos >= 0) {
+                        categoryAdapter.setSelectedPosition(catPos);
+                        if (rvCategories instanceof androidx.leanback.widget.VerticalGridView) {
+                            ((androidx.leanback.widget.VerticalGridView) rvCategories).setSelectedPosition(catPos);
+                        } else {
+                            rvCategories.scrollToPosition(catPos);
                         }
                     }
-                }
+                    if (categoryHadFocus) {
+                        rvCategories.requestFocus();
+                    }
 
-                // Focus on channel list
-                rvChannels.requestFocus();
+                    // 2. Preserve channel selection and focus
+                    boolean channelsHadFocus = rvChannels.hasFocus();
+                    int lastSelectedPos = channelAdapter.getSelectedPosition();
+                    ChannelModel lastSelectedChannel = null;
+                    if (lastSelectedPos >= 0 && lastSelectedPos < channelAdapter.getItemCount()) {
+                        lastSelectedChannel = channelAdapter.getChannels().get(lastSelectedPos);
+                    }
+
+                    List<ChannelModel> channels = jsonLoader.getChannelsForCategory(currentCategory);
+                    channelAdapter.setChannels(channels);
+                    
+                    String playingUrl = prefManager.getLastChannelUrl();
+                    if (playingUrl != null) {
+                        channelAdapter.setCurrentPlayingUrl(playingUrl);
+                    }
+                    
+                    int newChPos = -1;
+                    if (lastSelectedChannel != null) {
+                        newChPos = channelAdapter.findPositionByUrl(lastSelectedChannel.url);
+                    }
+                    if (newChPos < 0 && playingUrl != null) {
+                        newChPos = channelAdapter.findPositionByUrl(playingUrl);
+                    }
+                    
+                    if (newChPos >= 0 && newChPos < channels.size()) {
+                        channelAdapter.setSelectedPosition(newChPos);
+                        if (rvChannels instanceof androidx.leanback.widget.VerticalGridView) {
+                            ((androidx.leanback.widget.VerticalGridView) rvChannels).setSelectedPosition(newChPos);
+                        } else {
+                            rvChannels.scrollToPosition(newChPos);
+                        }
+                    }
+                    if (channelsHadFocus) {
+                        rvChannels.requestFocus();
+                    }
+                }
             }
 
             @Override
@@ -247,6 +431,13 @@ public class MainActivity extends AppCompatActivity implements
         List<ChannelModel> channels = jsonLoader.getChannelsForCategory(category);
         channelAdapter.setChannels(channels);
 
+        // ALWAYS reset channel scroll to top when changing categories
+        if (rvChannels instanceof androidx.leanback.widget.VerticalGridView) {
+            ((androidx.leanback.widget.VerticalGridView) rvChannels).setSelectedPosition(0);
+        } else {
+            rvChannels.scrollToPosition(0);
+        }
+
         tvCategoryTitle.setText(category);
         tvChannelCount.setText(channels.size() + " channels");
 
@@ -264,20 +455,8 @@ public class MainActivity extends AppCompatActivity implements
     public void onCategoryClick(String category, int position) {
         updateChannelList(category);
         
-        // Drill-down: hide categories, show channels
-        findViewById(R.id.category_panel).setVisibility(View.GONE);
-        findViewById(R.id.channel_panel).setVisibility(View.VISIBLE);
-
-        uiHandler.postDelayed(() -> {
-            if (rvChannels.getChildCount() > 0) {
-                View firstChild = rvChannels.getChildAt(0);
-                if (firstChild != null) {
-                    firstChild.requestFocus();
-                }
-            } else {
-                rvChannels.requestFocus();
-            }
-        }, 100);
+        // Move focus directly to the channels list
+        focusChannels();
     }
 
     @Override
@@ -307,20 +486,21 @@ public class MainActivity extends AppCompatActivity implements
     };
 
     // ---- Player callbacks ----
+    // Use alpha animation instead of VISIBLE/GONE to prevent VerticalGridView layout resets.
 
     @Override
     public void onBuffering() {
         runOnUiThread(() -> {
-            loadingOverlay.setVisibility(View.VISIBLE);
-            errorOverlay.setVisibility(View.GONE);
+            loadingOverlay.animate().alpha(1f).setDuration(200).start();
+            errorOverlay.animate().alpha(0f).setDuration(150).start();
         });
     }
 
     @Override
     public void onPlaying() {
         runOnUiThread(() -> {
-            loadingOverlay.setVisibility(View.GONE);
-            errorOverlay.setVisibility(View.GONE);
+            loadingOverlay.animate().alpha(0f).setDuration(200).start();
+            errorOverlay.animate().alpha(0f).setDuration(150).start();
             resetAutoHideTimer();
         });
     }
@@ -328,8 +508,8 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     public void onError(String message) {
         runOnUiThread(() -> {
-            loadingOverlay.setVisibility(View.GONE);
-            errorOverlay.setVisibility(View.VISIBLE);
+            loadingOverlay.animate().alpha(0f).setDuration(150).start();
+            errorOverlay.animate().alpha(1f).setDuration(200).start();
         });
     }
 
@@ -408,7 +588,7 @@ public class MainActivity extends AppCompatActivity implements
         switch (keyCode) {
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
-                if (errorOverlay.getVisibility() == View.VISIBLE) {
+                if (errorOverlay.getAlpha() > 0.5f) {
                     playerManager.retry();
                     return true;
                 }
@@ -419,11 +599,18 @@ public class MainActivity extends AppCompatActivity implements
                 return true;
 
             case KeyEvent.KEYCODE_DPAD_RIGHT:
-                // No more side-by-side focus change needed, drill-down handles it
+                if (rvCategories.hasFocus()) {
+                    focusChannels();
+                    return true;
+                }
                 break;
 
             case KeyEvent.KEYCODE_DPAD_LEFT:
-                // If on channels, back button logic covers returning to categories.
+                if (rvChannels.hasFocus() || (btnSearch != null && btnSearch.hasFocus()) ||
+                    (rvSearchResults != null && rvSearchResults.hasFocus()) || (etSearch != null && etSearch.hasFocus())) {
+                    focusCategories();
+                    return true;
+                }
                 break;
 
             case KeyEvent.KEYCODE_MENU:
@@ -466,27 +653,32 @@ public class MainActivity extends AppCompatActivity implements
             return;
         }
 
-        // 3. If side panels (categories/channels) are visible -> drill-up or hide
+        // 3. If side panels (categories/channels/search) are visible -> handle navigation
         if (isPanelVisible) {
             View channelPanel = findViewById(R.id.channel_panel);
             View categoryPanel = findViewById(R.id.category_panel);
             
-            if (channelPanel.getVisibility() == View.VISIBLE) {
-                // Drill-up: hide channels, show categories
-                channelPanel.setVisibility(View.GONE);
-                categoryPanel.setVisibility(View.VISIBLE);
+            // If search panel is visible -> back to channels
+            if (searchPanel != null && searchPanel.getVisibility() == View.VISIBLE) {
+                hideSearch();
+                channelPanel.setVisibility(View.VISIBLE);
                 
-                int selectedCat = categoryAdapter.getSelectedPosition();
-                RecyclerView.ViewHolder holder = rvCategories.findViewHolderForAdapterPosition(selectedCat);
-                if (holder != null && holder.itemView != null) {
-                    holder.itemView.requestFocus();
-                } else {
-                    rvCategories.requestFocus();
+                // Focus on search button
+                if (btnSearch != null) {
+                    btnSearch.requestFocus();
                 }
-            } else {
-                // Hide panels and go to fullscreen player
-                togglePanels(false);
+                return;
             }
+
+            // In side-by-side layout, both are visible. 
+            // If focus is in channels, back button goes to categories.
+            if (rvChannels.hasFocus() || (btnSearch != null && btnSearch.hasFocus())) {
+                focusCategories();
+                return;
+            }
+
+            // If focus is already in categories, back button hides panels
+            togglePanels(false);
             return;
         }
 
@@ -530,6 +722,30 @@ public class MainActivity extends AppCompatActivity implements
         playChannel(nextChannel);
     }
 
+    private void focusCategories() {
+        int selectedCat = categoryAdapter.getSelectedPosition();
+        if (selectedCat >= 0 && rvCategories instanceof androidx.leanback.widget.VerticalGridView) {
+            ((androidx.leanback.widget.VerticalGridView) rvCategories).setSelectedPosition(selectedCat);
+        }
+        rvCategories.requestFocus();
+    }
+
+    private void focusChannels() {
+        if (searchPanel != null && searchPanel.getVisibility() == View.VISIBLE) {
+            if (rvSearchResults != null && rvSearchResults.getVisibility() == View.VISIBLE && searchAdapter.getItemCount() > 0) {
+                rvSearchResults.requestFocus();
+            } else if (etSearch != null) {
+                etSearch.requestFocus();
+            }
+        } else {
+            int selectedChan = channelAdapter.getSelectedPosition();
+            if (selectedChan >= 0 && rvChannels instanceof androidx.leanback.widget.VerticalGridView) {
+                ((androidx.leanback.widget.VerticalGridView) rvChannels).setSelectedPosition(selectedChan);
+            }
+            rvChannels.requestFocus();
+        }
+    }
+
     private void togglePanels(boolean visible) {
         isPanelVisible = visible;
 
@@ -542,18 +758,33 @@ public class MainActivity extends AppCompatActivity implements
             if (controlsHud != null) {
                 controlsHud.setVisibility(View.GONE);
             }
+
+            // Hide search panel when opening panels
+            if (searchPanel != null) {
+                searchPanel.setVisibility(View.GONE);
+            }
             
-            // Initial state for drill-down: Category is visible, Channels hidden
+            // Initial state for side-by-side: Both Category and Channels are visible
             findViewById(R.id.category_panel).setVisibility(View.VISIBLE);
-            findViewById(R.id.channel_panel).setVisibility(View.GONE);
+            findViewById(R.id.channel_panel).setVisibility(View.VISIBLE);
             
             int selectedCat = categoryAdapter.getSelectedPosition();
             if (selectedCat >= 0) {
-                rvCategories.scrollToPosition(selectedCat);
+                if (rvCategories instanceof androidx.leanback.widget.VerticalGridView) {
+                    ((androidx.leanback.widget.VerticalGridView) rvCategories).setSelectedPosition(selectedCat);
+                } else {
+                    rvCategories.scrollToPosition(selectedCat);
+                }
             }
             rvCategories.requestFocus();
         } else {
             cancelAutoHideTimer();
+
+            // Hide search when closing panels
+            if (searchPanel != null) {
+                hideSearch();
+            }
+
             playerView.requestFocus();
 
             ChannelModel current = playerManager.getCurrentChannel();
@@ -635,6 +866,9 @@ public class MainActivity extends AppCompatActivity implements
 
         btnQuality.setOnFocusChangeListener(focusListener);
         btnAspect.setOnFocusChangeListener(focusListener);
+        if (btnRefresh != null) {
+            btnRefresh.setOnFocusChangeListener(focusListener);
+        }
         btnMenu.setOnFocusChangeListener(focusListener);
         if (btnDeveloper != null) {
             btnDeveloper.setOnFocusChangeListener(focusListener);
@@ -652,7 +886,7 @@ public class MainActivity extends AppCompatActivity implements
         });
         btnAspect.setOnClickListener(v -> {
             String modeName = playerManager.toggleResizeMode();
-            btnAspect.setText("📺 ASPECT (" + modeName + ")");
+            Toast.makeText(this, "Aspect Ratio: " + modeName, Toast.LENGTH_SHORT).show();
             resetAutoHideTimer();
         });
 
@@ -688,6 +922,89 @@ public class MainActivity extends AppCompatActivity implements
                 }
             });
         }
+
+        if (btnRefresh != null) {
+            btnRefresh.setOnClickListener(v -> {
+                hideControlsHud();
+                triggerManualRefresh();
+            });
+        }
+    }
+
+    private void triggerManualRefresh() {
+        // Show loading overlay
+        loadingOverlay.animate().alpha(1f).setDuration(200).start();
+        tvChannelCount.setText("Refreshing channels from remote...");
+        Toast.makeText(this, "Downloading latest channel data...", Toast.LENGTH_SHORT).show();
+
+        jsonLoader.manualRefreshAsync(this, new JsonLoader.LoadCallback() {
+            @Override
+            public void onLoaded(int channelCount, int categoryCount) {
+                runOnUiThread(() -> {
+                    loadingOverlay.animate().alpha(0f).setDuration(200).start();
+                    Toast.makeText(MainActivity.this, "Channels refreshed successfully!", Toast.LENGTH_SHORT).show();
+
+                    // Update categories
+                    List<String> cats = jsonLoader.getCategories();
+                    String activeCategory = currentCategory;
+                    categoryAdapter.setCategories(cats);
+                    
+                    int catPos = categoryAdapter.findPosition(activeCategory);
+                    if (catPos >= 0) {
+                        categoryAdapter.setSelectedPosition(catPos);
+                        if (rvCategories instanceof androidx.leanback.widget.VerticalGridView) {
+                            ((androidx.leanback.widget.VerticalGridView) rvCategories).setSelectedPosition(catPos);
+                        } else {
+                            rvCategories.scrollToPosition(catPos);
+                        }
+                    }
+
+                    // Update channels preserving selection/focus position
+                    int lastSelectedPos = channelAdapter.getSelectedPosition();
+                    ChannelModel lastSelectedChannel = null;
+                    if (lastSelectedPos >= 0 && lastSelectedPos < channelAdapter.getItemCount()) {
+                        lastSelectedChannel = channelAdapter.getChannels().get(lastSelectedPos);
+                    }
+
+                    List<ChannelModel> channels = jsonLoader.getChannelsForCategory(currentCategory);
+                    channelAdapter.setChannels(channels);
+
+                    String playingUrl = prefManager.getLastChannelUrl();
+                    if (playingUrl != null) {
+                        channelAdapter.setCurrentPlayingUrl(playingUrl);
+                    }
+
+                    int newChPos = -1;
+                    if (lastSelectedChannel != null) {
+                        newChPos = channelAdapter.findPositionByUrl(lastSelectedChannel.url);
+                    }
+                    if (newChPos < 0 && playingUrl != null) {
+                        newChPos = channelAdapter.findPositionByUrl(playingUrl);
+                    }
+
+                    if (newChPos >= 0 && newChPos < channels.size()) {
+                        channelAdapter.setSelectedPosition(newChPos);
+                        if (rvChannels instanceof androidx.leanback.widget.VerticalGridView) {
+                            ((androidx.leanback.widget.VerticalGridView) rvChannels).setSelectedPosition(newChPos);
+                        } else {
+                            rvChannels.scrollToPosition(newChPos);
+                        }
+                    }
+
+                    // Show panels
+                    togglePanels(true);
+                });
+            }
+
+            @Override
+            public void onError(String message) {
+                runOnUiThread(() -> {
+                    loadingOverlay.animate().alpha(0f).setDuration(200).start();
+                    Toast.makeText(MainActivity.this, "Refresh failed: " + message, Toast.LENGTH_LONG).show();
+                    togglePanels(true);
+                });
+            }
+        });
     }
 
     private void showQualitySelectionDialog() {
@@ -711,7 +1028,7 @@ public class MainActivity extends AppCompatActivity implements
         builder.setSingleChoiceItems(names, selectedIndex, (dialog, which) -> {
             PlayerManager.TrackInfo selected = qualities.get(which);
             playerManager.setVideoQuality(selected);
-            btnQuality.setText("⚙ QUALITY (" + selected.name + ")");
+            Toast.makeText(this, "Quality: " + selected.name, Toast.LENGTH_SHORT).show();
             dialog.dismiss();
             resetAutoHideTimer();
         });
@@ -721,18 +1038,6 @@ public class MainActivity extends AppCompatActivity implements
     private void showControlsHud() {
         if (controlsHud == null) return;
         controlsHud.setVisibility(View.VISIBLE);
-
-        btnAspect.setText("📺 ASPECT (" + playerManager.getResizeModeName() + ")");
-
-        List<PlayerManager.TrackInfo> qualities = playerManager.getVideoQualities();
-        String activeQuality = "Auto";
-        for (PlayerManager.TrackInfo t : qualities) {
-            if (t.isSelected) {
-                activeQuality = t.name;
-                break;
-            }
-        }
-        btnQuality.setText("⚙ QUALITY (" + activeQuality + ")");
 
         btnMenu.requestFocus();
         resetAutoHideTimer();

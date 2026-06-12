@@ -1,29 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Focused state (D-pad selection) -->
     <item android:state_focused="true">
         <shape android:shape="rectangle">
-            <solid android:color="@color/focus_glow" />
-            <stroke android:width="2dp" android:color="@color/focus_border" />
-            <corners android:radius="8dp" />
+            <!-- Premium warm gradient for channels to distinguish from categories -->
+            <gradient
+                android:startColor="#FFFF3D00"
+                android:endColor="#FFFF8A65"
+                android:angle="0" />
+            <corners android:radius="12dp" />
+            <padding android:left="4dp" android:right="4dp" android:top="2dp" android:bottom="2dp" />
         </shape>
     </item>
+    
+    <!-- Active/Selected state (currently playing) -->
     <item android:state_selected="true">
         <shape android:shape="rectangle">
-            <solid android:color="@color/item_selected" />
-            <stroke android:width="1dp" android:color="@color/focus_blue" />
-            <corners android:radius="8dp" />
+            <solid android:color="#33FFFFFF" />
+            <stroke android:width="1dp" android:color="#66FFFFFF" />
+            <corners android:radius="12dp" />
         </shape>
     </item>
-    <item android:state_pressed="true">
-        <shape android:shape="rectangle">
-            <solid android:color="@color/item_pressed" />
-            <corners android:radius="8dp" />
-        </shape>
-    </item>
+    
+    <!-- Default state -->
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="@color/item_default" />
-            <corners android:radius="8dp" />
+            <!-- Subtle card background for default state to look richer -->
+            <solid android:color="#0AFFFFFF" />
+            <corners android:radius="12dp" />
         </shape>
     </item>
 </selector>
