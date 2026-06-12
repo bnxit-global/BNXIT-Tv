@@ -36,7 +36,7 @@ jobs:
       - name: Generate Keystore Automatically
         run: |
           keytool -genkeypair -v \
-            -keystore keystore.jks \
+            -keystore app/keystore.jks \
             -storepass android123 \
             -alias bnxit \
             -keypass android123 \
