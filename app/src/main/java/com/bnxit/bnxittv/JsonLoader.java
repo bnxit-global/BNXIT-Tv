@@ -313,7 +313,45 @@ public class JsonLoader {
     private void buildCategoryData(Set<String> categorySet) {
         categories.clear();
         categories.add("All");
-        categories.addAll(categorySet);
+
+        // Sort priority categories on top (FIFA, World Cup, Cricket, etc.)
+        List<String> priorityCats = new ArrayList<>();
+        List<String> priorityKeywords = new ArrayList<>();
+        priorityKeywords.add("fifa");
+        priorityKeywords.add("world cup");
+        priorityKeywords.add("cricket cup");
+        priorityKeywords.add("cricket");
+        priorityKeywords.add("sports");
+        priorityKeywords.add("football");
+
+        List<String> remainingCats = new ArrayList<>(categorySet);
+
+        // Find categories that match priority keywords (order by priorityKeywords list)
+        for (String keyword : priorityKeywords) {
+            List<String> matchesForKeyword = new ArrayList<>();
+            for (String cat : remainingCats) {
+                if (cat.toLowerCase().contains(keyword)) {
+                    matchesForKeyword.add(cat);
+                }
+            }
+            // Sort matches for this keyword alphabetically, then add to priority
+            java.util.Collections.sort(matchesForKeyword);
+            for (String match : matchesForKeyword) {
+                if (!priorityCats.contains(match)) {
+                    priorityCats.add(match);
+                }
+            }
+        }
+
+        // Remove priority categories from the remaining list
+        remainingCats.removeAll(priorityCats);
+
+        // Sort the remaining categories alphabetically
+        java.util.Collections.sort(remainingCats);
+
+        // Assemble categories list
+        categories.addAll(priorityCats);
+        categories.addAll(remainingCats);
 
         channelsByCategory.clear();
         channelsByCategory.put("All", new ArrayList<>(allChannels));

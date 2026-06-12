@@ -23,6 +23,7 @@ public class CategoryAdapter extends RecyclerView.Adapter<CategoryAdapter.Catego
 
     public interface OnCategoryClickListener {
         void onCategoryClick(String category, int position);
+        void onCategorySelected(String category, int position);
     }
 
     public void setOnCategoryClickListener(OnCategoryClickListener listener) {
@@ -81,6 +82,14 @@ public class CategoryAdapter extends RecyclerView.Adapter<CategoryAdapter.Catego
             if (hasFocus) {
                 v.animate().scaleX(1.04f).scaleY(1.04f).translationZ(6f).setDuration(150).start();
                 holder.tvName.setTextColor(0xFFFFFFFF);
+                
+                int adapterPos = holder.getAdapterPosition();
+                if (adapterPos != RecyclerView.NO_POSITION && adapterPos != selectedPosition) {
+                    setSelectedPosition(adapterPos);
+                    if (listener != null) {
+                        listener.onCategorySelected(categories.get(adapterPos), adapterPos);
+                    }
+                }
             } else {
                 v.animate().scaleX(1.0f).scaleY(1.0f).translationZ(0f).setDuration(150).start();
                 int adapterPos = holder.getAdapterPosition();

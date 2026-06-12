@@ -278,6 +278,11 @@ public class MainActivity extends AppCompatActivity implements
         }, 100);
     }
 
+    @Override
+    public void onCategorySelected(String category, int position) {
+        updateChannelList(category);
+    }
+
     private void playChannel(ChannelModel channel) {
         if (channel == null) return;
 
@@ -348,14 +353,7 @@ public class MainActivity extends AppCompatActivity implements
         // If developer overlay is visible, let it consume BACK to close
         if (isDeveloperOverlayVisible) {
             if (keyCode == KeyEvent.KEYCODE_BACK) {
-                if (developerInfoOverlay != null) {
-                    developerInfoOverlay.setVisibility(View.GONE);
-                    isDeveloperOverlayVisible = false;
-                    showControlsHud();
-                    if (btnDeveloper != null) {
-                        btnDeveloper.requestFocus();
-                    }
-                }
+                onBackPressed();
                 return true;
             }
             return super.onKeyDown(keyCode, event);
@@ -364,8 +362,11 @@ public class MainActivity extends AppCompatActivity implements
         // 1. If panels are hidden (fullscreen)
         if (!isPanelVisible) {
             if (isControlsHudVisible()) {
+                if (keyCode == KeyEvent.KEYCODE_BACK) {
+                    onBackPressed();
+                    return true;
+                }
                 switch (keyCode) {
-                    case KeyEvent.KEYCODE_BACK:
                     case KeyEvent.KEYCODE_DPAD_UP:
                     case KeyEvent.KEYCODE_DPAD_DOWN:
                         hideControlsHud();
@@ -374,6 +375,10 @@ public class MainActivity extends AppCompatActivity implements
                 // Let other keys pass through to controls HUD buttons
                 return super.onKeyDown(keyCode, event);
             } else {
+                if (keyCode == KeyEvent.KEYCODE_BACK) {
+                    onBackPressed();
+                    return true;
+                }
                 switch (keyCode) {
                     case KeyEvent.KEYCODE_DPAD_UP:
                     case KeyEvent.KEYCODE_CHANNEL_UP:
@@ -387,7 +392,6 @@ public class MainActivity extends AppCompatActivity implements
                         navigateChannel(1);
                         return true;
 
-                    case KeyEvent.KEYCODE_BACK:
                     case KeyEvent.KEYCODE_DPAD_LEFT:
                     case KeyEvent.KEYCODE_DPAD_RIGHT:
                     case KeyEvent.KEYCODE_DPAD_CENTER:
@@ -412,15 +416,33 @@ public class MainActivity extends AppCompatActivity implements
                 break;
 
             case KeyEvent.KEYCODE_BACK:
-                if (rvChannels.hasFocus()) {
-                    rvCategories.requestFocus();
-                    return true;
-                }
-                break; // Let categories focus fall through to close app
+                onBackPressed();
+                return true;
 
             case KeyEvent.KEYCODE_DPAD_RIGHT:
                 if (rvChannels.hasFocus()) {
                     togglePanels(false);
+                    return true;
+                } else if (rvCategories.hasFocus()) {
+                    if (rvChannels.getChildCount() > 0) {
+                        View firstChild = rvChannels.getChildAt(0);
+                        if (firstChild != null) {
+                            firstChild.requestFocus();
+                            return true;
+                        }
+                    }
+                }
+                break;
+
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+                if (rvChannels.hasFocus()) {
+                    int selectedCat = categoryAdapter.getSelectedPosition();
+                    RecyclerView.ViewHolder holder = rvCategories.findViewHolderForAdapterPosition(selectedCat);
+                    if (holder != null && holder.itemView != null) {
+                        holder.itemView.requestFocus();
+                    } else {
+                        rvCategories.requestFocus();
+                    }
                     return true;
                 }
                 break;
@@ -442,6 +464,46 @@ public class MainActivity extends AppCompatActivity implements
         }
 
         return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (isDeveloperOverlayVisible) {
+            if (developerInfoOverlay != null) {
+                developerInfoOverlay.setVisibility(View.GONE);
+                isDeveloperOverlayVisible = false;
+                showControlsHud();
+                if (btnDeveloper != null) {
+                    btnDeveloper.requestFocus();
+                }
+            }
+            return;
+        }
+
+        if (!isPanelVisible) {
+            if (isControlsHudVisible()) {
+                hideControlsHud();
+            } else {
+                showControlsHud();
+            }
+            return;
+        }
+
+        if (rvChannels.hasFocus()) {
+            rvCategories.requestFocus();
+            return;
+        }
+
+        showExitDialog();
+    }
+
+    private void showExitDialog() {
+        new androidx.appcompat.app.AlertDialog.Builder(this, R.style.TvDialogTheme)
+                .setTitle("Exit App")
+                .setMessage("Do you want to exit BNXIT TV?")
+                .setPositiveButton("Yes", (dialog, which) -> finish())
+                .setNegativeButton("No", null)
+                .show();
     }
 
     private void navigateChannel(int direction) {
